@@ -36,7 +36,7 @@
                         <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                             <i class="fa-solid fa-user text-xs"></i>
                         </span>
-                        <input type="text" id="usernameInput" placeholder="Enter username (e.g. user1)" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                        <input type="text" id="usernameInput" placeholder="Enter username" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
                     </div>
                 </div>
 
@@ -199,9 +199,10 @@
 
     <!-- Application Script -->
     <script>
-        const VALID_USERS_ENCODED = {
-            "user1": "cGFzc0A0NTY=",
-            "user2": "dXNlckBwYXNz"
+        // Clean Obfuscated Credentials (Prevents casual plain-text viewing)
+        const VALID_USERS = {
+            "user1": "cGFzc0A0NTY=", 
+            "user2": "dXNlckBwYXNz"  
         };
 
         let allData = [];
@@ -226,7 +227,7 @@
             const loginModal = document.getElementById('loginModal');
             const appContainer = document.getElementById('appContainer');
 
-            if (isLoggedIn && currentUser && VALID_USERS_ENCODED[currentUser]) {
+            if (isLoggedIn && currentUser && VALID_USERS[currentUser]) {
                 loginModal.classList.add('hidden');
                 appContainer.classList.remove('hidden');
                 document.getElementById('currentUserDisplay').textContent = currentUser;
@@ -244,9 +245,9 @@
             const passInput = document.getElementById('passwordInput').value.trim();
             const errorDiv = document.getElementById('loginError');
 
-            if (VALID_USERS_ENCODED[userInput]) {
+            if (VALID_USERS[userInput]) {
                 try {
-                    const decodedPass = atob(VALID_USERS_ENCODED[userInput]);
+                    const decodedPass = atob(VALID_USERS[userInput]);
                     if (decodedPass === passInput) {
                         sessionStorage.setItem('isLoggedIn', 'true');
                         sessionStorage.setItem('currentUser', userInput);
@@ -257,7 +258,7 @@
                         return;
                     }
                 } catch (e) {
-                    console.error("Decoding error");
+                    console.error("Auth error");
                 }
             }
             errorDiv.classList.remove('hidden');
@@ -412,27 +413,17 @@
         const DB_NAME = "ActiveImportersDB";
         const STORE_NAME = "importers";
 
-        function openDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(DB_NAME, 1);
-                request.onupgradeneeded = (e) => {
+        function saveToDatabase() {
+            if (allData.length === 0) return alert("No data to save!");
+            try {
+                const openReq = indexedDB.open(DB_NAME, 1);
+                openReq.onupgradeneeded = (e) => {
                     const db = e.target.result;
                     if (!db.objectStoreNames.contains(STORE_NAME)) {
                         db.createObjectStore(STORE_NAME, { autoIncrement: true });
                     }
                 };
-                request.onsuccess = (e) => resolve(e.target.result);
-                request.onerror = (e) => reject(e.target.error);
-            });
-        }
-
-        async function saveToDatabase() {
-            if (allData.length === 0) return alert("No data to save!");
-            try {
-                const db = __awaitOpenDB(); // handled via standard openDB below
-                // standard IndexedDB execution
-                const openReq = indexedDB.open(DB_NAME, 1);
-                openReq.onsuccess = async (e) => {
+                openReq.onsuccess = (e) => {
                     const db = e.target.result;
                     const transaction = db.transaction(STORE_NAME, "readwrite");
                     const store = transaction.objectStore(STORE_NAME);
@@ -448,9 +439,15 @@
             }
         }
 
-        async function loadFromIndexedDB() {
+        function loadFromIndexedDB() {
             try {
                 const openReq = indexedDB.open(DB_NAME, 1);
+                openReq.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME, { autoIncrement: true });
+                    }
+                };
                 openReq.onsuccess = (e) => {
                     const db = e.target.result;
                     if (!db.objectStoreNames.contains(STORE_NAME)) return;
@@ -475,7 +472,7 @@
             }
         }
 
-        async function clearDatabase() {
+        function clearDatabase() {
             if (!confirm("Are you sure you want to clear the local database?")) return;
             try {
                 const openReq = indexedDB.open(DB_NAME, 1);
