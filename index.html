@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Importers Local Database Manager</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS (xlsx) CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-50 text-slate-800 h-full flex flex-col font-sans">
+
+    <!-- Login Modal Screen -->
+    <div id="loginModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div class="bg-indigo-700 text-white p-6 text-center">
+                <div class="bg-indigo-600 w-16 h-16 rounded-2xl border border-indigo-500 shadow-inner flex items-center justify-center mx-auto mb-3">
+                    <i class="fa-solid fa-lock text-3xl text-indigo-200"></i>
+                </div>
+                <h2 class="text-xl font-bold tracking-tight">Importers Manager Login</h2>
+                <p class="text-xs text-indigo-200 mt-1">Secure Local Access</p>
+            </div>
+            
+            <div class="p-6 space-y-4">
+                <div id="loginError" class="hidden p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Invalid username or password. Please try again.</span>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Username</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-user text-xs"></i>
+                        </span>
+                        <input type="text" id="usernameInput" placeholder="Enter username (e.g. user1)" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Password</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-key text-xs"></i>
+                        </span>
+                        <input type="password" id="passwordInput" placeholder="Enter password" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                    </div>
+                </div>
+
+                <button onclick="attemptLogin()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-lg text-xs transition flex items-center justify-center gap-2 shadow-md mt-2">
+                    <i class="fa-solid fa-right-to-bracket"></i>
+                    <span>Log In</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Container (Hidden by default until logged in) -->
+    <div id="appContainer" class="hidden h-full flex flex-col">
+        <!-- Header -->
+        <header class="bg-indigo-700 text-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-indigo-600 p-2.5 rounded-xl border border-indigo-500 shadow-inner">
+                        <i class="fa-solid fa-boxes-stacked text-2xl text-indigo-200"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold tracking-tight">Active Importers Database Manager</h1>
+                        <p class="text-xs text-indigo-200">Local IndexedDB Storage, Excel Importer & CSV Converter</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="hidden md:flex items-center gap-2 bg-indigo-800/60 px-3 py-1.5 rounded-lg border border-indigo-600/40 text-xs text-indigo-100">
+                        <i class="fa-solid fa-user-circle text-indigo-300"></i>
+                        <span>Logged in as: <strong id="currentUserDisplay" class="text-white capitalize"></strong></span>
+                    </div>
+                    <div id="dbStatusBadge" class="hidden sm:flex items-center gap-2 bg-indigo-800/80 px-3 py-1.5 rounded-lg border border-indigo-600/50 text-xs">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>IndexedDB Ready</span>
+                    </div>
+                    <button onclick="handleLogout()" class="bg-indigo-800 hover:bg-indigo-900 text-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-600/50 text-xs flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-right-from-bracket"></i> Log Out
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Container -->
+        <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 overflow-hidden flex flex-col gap-4">
+
+            <!-- Control Bar (File Upload & Actions) -->
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <label class="cursor-pointer bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium px-4 py-2.5 rounded-lg border border-indigo-200 text-xs transition flex items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-file-excel text-emerald-600 text-base"></i>
+                        <span>Select Excel / CSV File</span>
+                        <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileSelect(event)">
+                    </label>
+                    <span id="fileNameDisplay" class="text-xs text-slate-500 italic">No file loaded</span>
+                </div>
+
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button onclick="saveToDatabase()" id="saveDbBtn" disabled class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium px-4 py-2.5 rounded-lg text-xs transition flex items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-floppy-disk"></i> Save to Local DB (<span id="recordCountBadge">0</span>)
+                    </button>
+                    <button onclick="exportToCSV()" id="exportCsvBtn" disabled class="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium px-4 py-2.5 rounded-lg text-xs transition flex items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-file-csv"></i> Export to .CSV
+                    </button>
+                    <button onclick="clearDatabase()" class="bg-rose-50 hover:bg-rose-100 text-rose-700 font-medium px-3 py-2.5 rounded-lg border border-rose-200 text-xs transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-trash-can"></i> Clear Local DB
+                    </button>
+                </div>
+            </div>
+
+            <!-- Search and Filter Controls -->
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-12 gap-3">
+                <div class="md:col-span-6 relative">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </span>
+                    <input type="text" id="searchBox" oninput="filterData()" placeholder="Search by Importer Name, TIN, CCN, Email, Business Nature..." class="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                </div>
+                <div class="md:col-span-3">
+                    <select id="statusFilter" onchange="filterData()" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                        <option value="">All Statuses</option>
+                        <option value="ACTIVE">ACTIVE</option>
+                        <option value="INACTIVE">INACTIVE</option>
+                    </select>
+                </div>
+                <div class="md:col-span-3">
+                    <select id="typeFilter" onchange="filterData()" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white">
+                        <option value="">All Types (IM / EX)</option>
+                        <option value="IM">IM (Importer)</option>
+                        <option value="EX">EX (Exporter)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Data Table Container -->
+            <div class="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                <div class="flex-1 overflow-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-100 text-slate-700 uppercase text-[10px] font-semibold sticky top-0 z-10 border-b border-slate-200">
+                            <tr>
+                                <th class="p-3">Status</th>
+                                <th class="p-3">Type</th>
+                                <th class="p-3">TIN</th>
+                                <th class="p-3">Importer Name</th>
+                                <th class="p-3">Business Type</th>
+                                <th class="p-3">Business Nature</th>
+                                <th class="p-3">Email</th>
+                                <th class="p-3">Telephone</th>
+                                <th class="p-3">CCN</th>
+                                <th class="p-3 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTableBody" class="divide-y divide-slate-100 text-xs">
+                            <tr>
+                                <td colspan="10" class="p-8 text-center text-slate-400 italic">
+                                    No database loaded. Upload an Excel/CSV file or load saved records.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination Footer -->
+                <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-600">
+                    <div>Showing <span id="paginationInfo">0 of 0</span> records</div>
+                    <div class="flex gap-2">
+                        <button onclick="changePage(-1)" id="prevBtn" class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50">Previous</button>
+                        <span id="pageIndicator" class="px-3 py-1.5 font-medium">Page 1 of 1</span>
+                        <button onclick="changePage(1)" id="nextBtn" class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-50">Next</button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Detail View Modal -->
+    <div id="detailModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-2xl rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="bg-indigo-700 text-white p-4 flex justify-between items-center">
+                <h3 class="font-bold text-sm flex items-center gap-2"><i class="fa-solid fa-circle-info"></i> Full Importer Details</h3>
+                <button onclick="closeModal()" class="text-indigo-200 hover:text-white text-base"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="modalBody" class="p-6 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <!-- Dynamically filled -->
+            </div>
+            <div class="p-3 bg-slate-50 border-t border-slate-200 text-right">
+                <button onclick="closeModal()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-medium">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        let allData = [];
+        let filteredData = [];
+        let currentPage = 1;
+        const pageSize = 15;
+
+        const EXPECTED_COLUMNS = [
+            'STATUS', 'TYPE', 'TIN', 'IMPORTER', 'BUSS_TYPE', 
+            'BUSINESS_NATURE', 'EMAIL', 'TELEPHONE1', 'ALTERNATE', 
+            'EXPIRY_DATE', 'REASON', 'CCN', 'TRANSACTION_DATE', 
+            'PAID_UP', '1ST_REGISTRATION'
+        ];
+
+        window.addEventListener('DOMContentLoaded', () => {
+            checkAuth();
+        });
+
+        function checkAuth() {
+            const isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true';
+            const currentUser = sessionStorage.getItem('currentUser');
+            const loginModal = document.getElementById('loginModal');
+            const appContainer = document.getElementById('appContainer');
+
+            if (isLoggedIn && currentUser) {
+                loginModal.classList.add('hidden');
+                appContainer.classList.remove('hidden');
+                document.getElementById('currentUserDisplay').textContent = currentUser;
+                loadFromIndexedDB();
+            } else {
+                sessionStorage.removeItem('isLoggedIn');
+                sessionStorage.removeItem('currentUser');
+                loginModal.classList.remove('hidden');
+                appContainer.classList.add('hidden');
+            }
+        }
+
+        async function attemptLogin() {
+            const userInput = document.getElementById('usernameInput').value.trim();
+            const passInput = document.getElementById('passwordInput').value.trim();
+            const errorDiv = document.getElementById('loginError');
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: userInput, password: passInput })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    sessionStorage.setItem('isLoggedIn', 'true');
+                    sessionStorage.setItem('currentUser', data.user);
+                    errorDiv.classList.add('hidden');
+                    document.getElementById('usernameInput').value = '';
+                    document.getElementById('passwordInput').value = '';
+                    checkAuth();
+                } else {
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (err) {
+                console.error("Login request failed", err);
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        function handleLogout() {
+            sessionStorage.removeItem('isLoggedIn');
+            sessionStorage.removeItem('currentUser');
+            document.getElementById('usernameInput').value = '';
+            document.getElementById('passwordInput').value = '';
+            checkAuth();
+        }
+
+        // File Handler
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            document.getElementById('fileNameDisplay').textContent = file.name;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    let json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                    
+                    allData = json.map(row => {
+                        let cleaned = {};
+                        EXPECTED_COLUMNS.forEach(col => {
+                            cleaned[col] = row[col] !== undefined ? row[col] : "";
+                        });
+                        return cleaned;
+                    });
+
+                    filteredData = [...allData];
+                    currentPage = 1;
+                    renderTable();
+                    
+                    document.getElementById('saveDbBtn').removeAttribute('disabled');
+                    document.getElementById('exportCsvBtn').removeAttribute('disabled');
+                    document.getElementById('recordCountBadge').textContent = allData.length;
+                    alert(`Successfully loaded ${allData.length} records! Click "Save to Local DB" to store permanently.`);
+                } catch (err) {
+                    console.error(err);
+                    alert("Error parsing file. Please select a valid Excel or CSV file.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Filter and Search Engine
+        function filterData() {
+            const query = document.getElementById('searchBox').value.toLowerCase().trim();
+            const status = document.getElementById('statusFilter').value;
+            const type = document.getElementById('typeFilter').value;
+
+            filteredData = allData.filter(item => {
+                const matchesQuery = !query || 
+                    String(item.IMPORTER).toLowerCase().includes(query) ||
+                    String(item.TIN).toLowerCase().includes(query) ||
+                    String(item.CCN).toLowerCase().includes(query) ||
+                    String(item.EMAIL).toLowerCase().includes(query) ||
+                    String(item.BUSINESS_NATURE).toLowerCase().includes(query);
+                
+                const matchesStatus = !status || item.STATUS === status;
+                const matchesType = !type || item.TYPE === type;
+
+                return matchesQuery && matchesStatus && matchesType;
+            });
+
+            currentPage = 1;
+            renderTable();
+        }
+
+        // Render Data Table
+        function renderTable() {
+            const tbody = document.getElementById('dataTableBody');
+            tbody.innerHTML = '';
+
+            if (filteredData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 italic">No matching records found.</td></tr>`;
+                updatePagination(0);
+                return;
+            }
+
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+            const pageItems = filteredData.slice(start, end);
+
+            pageItems.forEach((item, index) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition border-b border-slate-100";
+                tr.innerHTML = `
+                    <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${item.STATUS === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}">${item.STATUS || 'N/A'}</span></td>
+                    <td class="p-3 font-semibold text-indigo-700">${item.TYPE || 'N/A'}</td>
+                    <td class="p-3 font-mono text-slate-600">${item.TIN || ''}</td>
+                    <td class="p-3 font-medium text-slate-800">${item.IMPORTER || ''}</td>
+                    <td class="p-3 text-slate-600">${item.BUSS_TYPE || ''}</td>
+                    <td class="p-3 text-slate-600 truncate max-w-xs" title="${item.BUSINESS_NATURE || ''}">${item.BUSINESS_NATURE || ''}</td>
+                    <td class="p-3 text-slate-600">${item.EMAIL || ''}</td>
+                    <td class="p-3 text-slate-600">${item.TELEPHONE1 || ''}</td>
+                    <td class="p-3 font-mono text-slate-600">${item.CCN || ''}</td>
+                    <td class="p-3 text-center">
+                        <button onclick="viewDetails(${start + index})" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-lg text-[11px] font-medium transition"><i class="fa-solid fa-eye"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            updatePagination(filteredData.length);
+        }
+
+        function updatePagination(totalCount) {
+            const totalPages = Math.ceil(totalCount / pageSize) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            
+            document.getElementById('paginationInfo').textContent = `${totalCount > 0 ? (currentPage - 1) * pageSize + 1 : 0} - ${Math.min(currentPage * pageSize, totalCount)} of ${totalCount}`;
+            document.getElementById('pageIndicator').textContent = `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('prevBtn').disabled = currentPage <= 1;
+            document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+        }
+
+        function changePage(direction) {
+            currentPage += direction;
+            renderTable();
+        }
+
+        function viewDetails(index) {
+            const item = filteredData[index];
+            const modalBody = document.getElementById('modalBody');
+            modalBody.innerHTML = '';
+
+            EXPECTED_COLUMNS.forEach(col => {
+                modalBody.innerHTML += `
+                    <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                        <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">${col.replace(/_/g, ' ')}</span>
+                        <span class="font-medium text-slate-800">${item[col] !== undefined && item[col] !== "" ? item[col] : 'N/A'}</span>
+                    </div>
+                `;
+            });
+            document.getElementById('detailModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('detailModal').classList.add('hidden');
+        }
+
+        // IndexedDB Operations
+        const DB_NAME = "ActiveImportersDB";
+        const STORE_NAME = "importers";
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME, { autoIncrement: true });
+                    }
+                };
+                request.onsuccess = (e) => resolve(e.target.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function saveToDatabase() {
+            if (allData.length === 0) return alert("No data to save!");
+            try {
+                const db = await openDB();
+                const transaction = db.transaction(STORE_NAME, "readwrite");
+                const store = transaction.objectStore(STORE_NAME);
+                store.clear();
+                allData.forEach(item => store.add(item));
+                
+                transaction.oncomplete = () => {
+                    alert(`Saved ${allData.length} records to local IndexedDB storage!`);
+                };
+            } catch (err) {
+                console.error(err);
+                alert("Error saving to local database.");
+            }
+        }
+
+        async function loadFromIndexedDB() {
+            try {
+                const db = await openDB();
+                const transaction = db.transaction(STORE_NAME, "readonly");
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.getAll();
+
+                request.onsuccess = () => {
+                    if (request.result && request.result.length > 0) {
+                        allData = request.result;
+                        filteredData = [...allData];
+                        renderTable();
+                        document.getElementById('saveDbBtn').removeAttribute('disabled');
+                        document.getElementById('exportCsvBtn').removeAttribute('disabled');
+                        document.getElementById('recordCountBadge').textContent = allData.length;
+                        document.getElementById('fileNameDisplay').textContent = "Loaded from Local IndexedDB Storage";
+                    }
+                };
+            } catch (err) {
+                console.log("No existing IndexedDB dataset found.");
+            }
+        }
+
+        async function clearDatabase() {
+            if (!confirm("Are you sure you want to clear the local database?")) return;
+            try {
+                const db = await openDB();
+                const transaction = db.transaction(STORE_NAME, "readwrite");
+                transaction.objectStore(STORE_NAME).clear();
+                allData = [];
+                filteredData = [];
+                renderTable();
+                document.getElementById('saveDbBtn').setAttribute('disabled', 'true');
+                document.getElementById('exportCsvBtn').setAttribute('disabled', 'true');
+                document.getElementById('recordCountBadge').textContent = '0';
+                document.getElementById('fileNameDisplay').textContent = "No file loaded";
+                alert("Local database cleared.");
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function exportToCSV() {
+            if (allData.length === 0) return alert("No data to export!");
+            const worksheet = XLSX.utils.json_to_sheet(allData);
+            const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
+            const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Active_Importers_Export_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
