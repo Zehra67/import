@@ -21,7 +21,7 @@
                     <i class="fa-solid fa-lock text-3xl text-indigo-200"></i>
                 </div>
                 <h2 class="text-xl font-bold tracking-tight">Importers Manager Login</h2>
-                <p class="text-xs text-indigo-200 mt-1">Secure Local Access</p>
+                <p class="text-xs text-indigo-200 mt-1">Authorized Access Only</p>
             </div>
             
             <div class="p-6 space-y-4">
@@ -199,6 +199,11 @@
 
     <!-- Application Script -->
     <script>
+        const VALID_USERS_ENCODED = {
+            "user1": "cGFzc0A0NTY=",
+            "user2": "dXNlckBwYXNz"
+        };
+
         let allData = [];
         let filteredData = [];
         let currentPage = 1;
@@ -221,7 +226,7 @@
             const loginModal = document.getElementById('loginModal');
             const appContainer = document.getElementById('appContainer');
 
-            if (isLoggedIn && currentUser) {
+            if (isLoggedIn && currentUser && VALID_USERS_ENCODED[currentUser]) {
                 loginModal.classList.add('hidden');
                 appContainer.classList.remove('hidden');
                 document.getElementById('currentUserDisplay').textContent = currentUser;
@@ -234,34 +239,28 @@
             }
         }
 
-        async function attemptLogin() {
+        function attemptLogin() {
             const userInput = document.getElementById('usernameInput').value.trim();
             const passInput = document.getElementById('passwordInput').value.trim();
             const errorDiv = document.getElementById('loginError');
 
-            try {
-                const response = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: userInput, password: passInput })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    sessionStorage.setItem('isLoggedIn', 'true');
-                    sessionStorage.setItem('currentUser', data.user);
-                    errorDiv.classList.add('hidden');
-                    document.getElementById('usernameInput').value = '';
-                    document.getElementById('passwordInput').value = '';
-                    checkAuth();
-                } else {
-                    errorDiv.classList.remove('hidden');
+            if (VALID_USERS_ENCODED[userInput]) {
+                try {
+                    const decodedPass = atob(VALID_USERS_ENCODED[userInput]);
+                    if (decodedPass === passInput) {
+                        sessionStorage.setItem('isLoggedIn', 'true');
+                        sessionStorage.setItem('currentUser', userInput);
+                        errorDiv.classList.add('hidden');
+                        document.getElementById('usernameInput').value = '';
+                        document.getElementById('passwordInput').value = '';
+                        checkAuth();
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Decoding error");
                 }
-            } catch (err) {
-                console.error("Login request failed", err);
-                errorDiv.classList.remove('hidden');
             }
+            errorDiv.classList.remove('hidden');
         }
 
         function handleLogout() {
@@ -430,14 +429,18 @@
         async function saveToDatabase() {
             if (allData.length === 0) return alert("No data to save!");
             try {
-                const db = await openDB();
-                const transaction = db.transaction(STORE_NAME, "readwrite");
-                const store = transaction.objectStore(STORE_NAME);
-                store.clear();
-                allData.forEach(item => store.add(item));
-                
-                transaction.oncomplete = () => {
-                    alert(`Saved ${allData.length} records to local IndexedDB storage!`);
+                const db = __awaitOpenDB(); // handled via standard openDB below
+                // standard IndexedDB execution
+                const openReq = indexedDB.open(DB_NAME, 1);
+                openReq.onsuccess = async (e) => {
+                    const db = e.target.result;
+                    const transaction = db.transaction(STORE_NAME, "readwrite");
+                    const store = transaction.objectStore(STORE_NAME);
+                    store.clear();
+                    allData.forEach(item => store.add(item));
+                    transaction.oncomplete = () => {
+                        alert(`Saved ${allData.length} records to local IndexedDB storage!`);
+                    };
                 };
             } catch (err) {
                 console.error(err);
@@ -447,21 +450,25 @@
 
         async function loadFromIndexedDB() {
             try {
-                const db = await openDB();
-                const transaction = db.transaction(STORE_NAME, "readonly");
-                const store = transaction.objectStore(STORE_NAME);
-                const request = store.getAll();
+                const openReq = indexedDB.open(DB_NAME, 1);
+                openReq.onsuccess = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) return;
+                    const transaction = db.transaction(STORE_NAME, "readonly");
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.getAll();
 
-                request.onsuccess = () => {
-                    if (request.result && request.result.length > 0) {
-                        allData = request.result;
-                        filteredData = [...allData];
-                        renderTable();
-                        document.getElementById('saveDbBtn').removeAttribute('disabled');
-                        document.getElementById('exportCsvBtn').removeAttribute('disabled');
-                        document.getElementById('recordCountBadge').textContent = allData.length;
-                        document.getElementById('fileNameDisplay').textContent = "Loaded from Local IndexedDB Storage";
-                    }
+                    request.onsuccess = () => {
+                        if (request.result && request.result.length > 0) {
+                            allData = request.result;
+                            filteredData = [...allData];
+                            renderTable();
+                            document.getElementById('saveDbBtn').removeAttribute('disabled');
+                            document.getElementById('exportCsvBtn').removeAttribute('disabled');
+                            document.getElementById('recordCountBadge').textContent = allData.length;
+                            document.getElementById('fileNameDisplay').textContent = "Loaded from Local IndexedDB Storage";
+                        }
+                    };
                 };
             } catch (err) {
                 console.log("No existing IndexedDB dataset found.");
@@ -471,17 +478,21 @@
         async function clearDatabase() {
             if (!confirm("Are you sure you want to clear the local database?")) return;
             try {
-                const db = await openDB();
-                const transaction = db.transaction(STORE_NAME, "readwrite");
-                transaction.objectStore(STORE_NAME).clear();
-                allData = [];
-                filteredData = [];
-                renderTable();
-                document.getElementById('saveDbBtn').setAttribute('disabled', 'true');
-                document.getElementById('exportCsvBtn').setAttribute('disabled', 'true');
-                document.getElementById('recordCountBadge').textContent = '0';
-                document.getElementById('fileNameDisplay').textContent = "No file loaded";
-                alert("Local database cleared.");
+                const openReq = indexedDB.open(DB_NAME, 1);
+                openReq.onsuccess = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) return;
+                    const transaction = db.transaction(STORE_NAME, "readwrite");
+                    transaction.objectStore(STORE_NAME).clear();
+                    allData = [];
+                    filteredData = [];
+                    renderTable();
+                    document.getElementById('saveDbBtn').setAttribute('disabled', 'true');
+                    document.getElementById('exportCsvBtn').setAttribute('disabled', 'true');
+                    document.getElementById('recordCountBadge').textContent = '0';
+                    document.getElementById('fileNameDisplay').textContent = "No file loaded";
+                    alert("Local database cleared.");
+                };
             } catch (err) {
                 console.error(err);
             }
